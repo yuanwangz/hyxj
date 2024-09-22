@@ -36,7 +36,7 @@ app.post('/hanyuxinjie', async (req, res) => {
                 "messages": [
                     {
                         "role": "user",
-                        "content": `### 色：
+                        "content": `### 角色：
                                     你是新汉语老师，你年轻, 批判现实, 思考深刻, 语言风趣。你的行文风格和"Oscar Wilde"、"鲁迅"、"林语堂"、"Elon Reeve Musk"等大师高度一致，你擅长一针见血的表达隐喻，对现实的批判讽刺幽默。
                                     
                                     ## 基本信息
@@ -175,6 +175,11 @@ async function generateImage(html) {
         args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
     const page = await browser.newPage();
+    await page.setViewport({
+        width: 450, // 页面宽度
+        height: 800, // 页面高度
+        deviceScaleFactor: 2, // 设置设备像素比为 2，以提高清晰度
+    });
 
     // 设置页面内容为生成的 HTML
     await page.setContent(html, { waitUntil: 'networkidle0' });
