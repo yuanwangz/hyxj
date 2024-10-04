@@ -3,6 +3,7 @@ import fetch from 'node-fetch';
 import puppeteer from 'puppeteer';
 import { promises as fs } from 'fs';
 import { join } from 'path';
+import { createHmac } from 'crypto';
 import dotenv from 'dotenv';
 
 // 加载 .env 文件中的环境变量
@@ -199,6 +200,81 @@ async function generateImage(html) {
     await browser.close();
     return imageBuffer;
 }
+
+const generateSign = (data) => {
+    const secret = 'your-secret-key'; // Replace with the actual secret key
+    return createHmac('sha256', secret).update(JSON.stringify(data)).digest('hex');
+};
+
+const processM3u8 = async (vodId, sid) => {
+    const BASE_URL = 'https://wantwatch.me';
+    try {
+        // Step 1: Get source URL
+        const sourceResponse = await fetch(`${BASE_URL}/api/getSource`, {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json, text/plain, */*',
+                'Accept-Language': 'zh-CN,zh;q=0.9',
+                'Content-Type': 'application/json',
+                'Origin': BASE_URL,
+                'Sign': generateSign({ vodId, sid }),
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
+                'sec-ch-ua': '"Google Chrome";v="129", "Not=A?Brand";v="8", "Chromium";v="129"',
+                'sec-ch-ua-mobile': '?0',
+                'sec-ch-ua-platform': '"Windows"'
+            },
+            body: JSON.stringify({ vodId, sid })
+        });
+
+        const sourceData = await sourceResponse.json();
+        console.log(sourceData.code )
+        if (sourceData.code !== 200) {
+            throw new Error('Failed to get source URL');
+        }
+
+        // Step 2: Construct m3u8 URL
+        const m3u8Url = `${BASE_URL}/splitOut${sourceData.data}`;
+
+        // Step 3: Fetch m3u8 content
+        const m3u8Response = await fetch(m3u8Url);
+        let m3u8Content = await m3u8Response.text();
+
+        // Step 4: Process m3u8 content
+        const baseUrlPath = sourceData.data.split('index.m3u8')[0];
+        const tsRegex = /^(index\d+\.ts(\?[^#\s]*)?)/gm;
+
+        m3u8Content = m3u8Content.replace(tsRegex, (match, p1) => {
+            return `${BASE_URL}/splitOut${baseUrlPath}${p1}`;
+        });
+
+        // Step 5: Return processed m3u8 content
+        return m3u8Content;
+
+    } catch (error) {
+        console.error('Error:', error);
+        throw error;
+    }
+};
+
+app.get('/api/process-m3u8', async (req, res) => {
+    try {
+        const { vodId, sid } = req.query;
+
+        // Validate input
+        if (!vodId || !sid) {
+            return res.status(400).json({ error: 'Missing required parameters: vodId and sid' });
+        }
+
+        const processedM3u8Content = await processM3u8(parseInt(vodId), parseInt(sid));
+        res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+        res.setHeader('Content-Disposition', `attachment; filename="processed_${vodId}_${sid}.m3u8"`);
+        res.send(processedM3u8Content);
+    } catch (error) {
+        console.error('Error in /api/process-m3u8:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 
 
 // 启动服务器
